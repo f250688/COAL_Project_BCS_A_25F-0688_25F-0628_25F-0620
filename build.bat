@@ -1,0 +1,1 @@
+c:\nasm.exe -f bin src\mario.asm -o MARIO.COM -i src\
