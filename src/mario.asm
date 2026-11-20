@@ -214,20 +214,81 @@ flag_zone       db 0,0,0,0,1,2,3,3,4,4,4,4    ; rows 2-3 = 5000, 4 = 2000, 5 = 8
 
 ; map_original and map_working (720 bytes each) will be added in Module 3
 
+; Include modules right before the code section:                     
+%include "video.asm"  
+
 ; ============================================================
 ; ===== CODE =====
 ; ============================================================
 
-; ------------------------------------------------------------
-; Name     : start
-; Purpose  : where the program begins; for now it only sets text mode
-;            and quits to DOS (the real game code comes later)
-; Inputs   : none
-; Outputs  : none (we end up back at the DOS prompt)
-; Changes  : AX
-; ------------------------------------------------------------
 start:
-    mov ax, 0003h               ; BIOS function 00h, mode 03h = normal text screen
-    int 10h                     ; call BIOS to do it
-    mov ah, 4Ch                 ; DOS function 4Ch = end program
-    int 21h                     ; call DOS to do it
+    call SetVideoMode           ; switch to 320x200 graphics mode
+
+    ; 1. Fill whole screen with COL_SKY (light blue)
+    push 0                      ; x = 0
+    push 0                      ; y = 0
+    push SCREEN_W               ; width = 320
+    push SCREEN_H               ; height = 200
+    push COL_SKY                ; colour = 9
+    call FillRect
+
+    ; 2. Draw top HUD strip using COL_HUD (blue)
+    push 0                      ; x = 0
+    push 0                      ; y = 0
+    push SCREEN_W               ; width = 320
+    push HUD_HEIGHT             ; height = 16
+    push COL_HUD                ; colour = 1
+    call FillRect
+
+    ; 3. Draw ground across the bottom using COL_GROUND (brown)
+    push 0                      ; x = 0
+    push 160                    ; y = 160 (row 10)
+    push SCREEN_W               ; width = 320
+    push 32                     ; height = 32 (rows 10 and 11)
+    push COL_GROUND             ; colour = 6
+    call FillRect
+
+    ; 4. Draw test blocks showing all your other game colours
+    push 30                     ; Brick (COL_BRICK = 4)
+    push 110
+    push TILE_SIZE
+    push TILE_SIZE
+    push COL_BRICK
+    call FillRect
+
+    push 60                     ; Pipe (COL_PIPE = 2)
+    push 128
+    push 32
+    push 32
+    push COL_PIPE
+    call FillRect
+
+    push 110                    ; Hero (COL_HERO = 12)
+    push 144
+    push TILE_SIZE
+    push TILE_SIZE
+    push COL_HERO
+    call FillRect
+
+    push 150                    ; Enemy (COL_ENEMY = 5)
+    push 144
+    push TILE_SIZE
+    push TILE_SIZE
+    push COL_ENEMY
+    call FillRect
+
+    push 190                    ; Text/White (COL_TEXT = 15)
+    push 50
+    push 32
+    push TILE_SIZE
+    push COL_TEXT
+    call FillRect
+
+    ; 5. Wait for any key press so you can see the test screen
+    mov ah, 00h                 ; BIOS keyboard function: wait for a key
+    int 16h                     ; call BIOS
+
+    ; 6. Switch back to text mode and exit to DOS cleanly
+    call SetTextMode
+    mov ax, 4C00h               ; DOS function 4Ch = end program
+    int 21h                     ; return to D:\> prompt
