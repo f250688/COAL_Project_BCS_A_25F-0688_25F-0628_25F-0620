@@ -2,8 +2,6 @@ ORG 100h
 jmp start                       ; skip the data below, start running at "start"
 ; ============================================================
 ; ===== CONSTANTS =====
-; A constant is just a name for a number. It takes NO memory,
-; NASM swaps the name for the number while assembling.
 ; ============================================================
 
 ; ---- screen and level ----
@@ -30,265 +28,305 @@ SMALL_H         EQU 16          ; small Mario is 16 pixels tall
 SUPER_H         EQU 32          ; super Mario is 32 pixels tall
 HIT_W           EQU 12          ; hitbox is 12 wide (sprite is 16) so hits feel fair
 
-; ---- tile codes: each number in the map means one kind of tile ----
-TILE_SKY        EQU 0           ; empty sky, you walk through it
-TILE_GROUND     EQU 1           ; ground, solid
-TILE_BRICK      EQU 2           ; brick, solid
-TILE_QCOIN      EQU 3           ; ? block that gives a coin
-TILE_QMUSH      EQU 4           ; ? block that gives a mushroom
-TILE_EMPTY      EQU 5           ; ? block after it was hit (used up)
-TILE_PIPE_TL    EQU 6           ; pipe top-left part
-TILE_PIPE_TR    EQU 7           ; pipe top-right part
-TILE_PIPE_BL    EQU 8           ; pipe body-left part
-TILE_PIPE_BR    EQU 9           ; pipe body-right part
-TILE_STAIR      EQU 10          ; stair block, solid
-TILE_COIN       EQU 11          ; coin lying in the level, you pick it up by touching
-TILE_FLAG       EQU 12          ; flag pole, touching it wins the level
+; ---- tile codes ----
+TILE_SKY        EQU 0
+TILE_GROUND     EQU 1
+TILE_BRICK      EQU 2
+TILE_QCOIN      EQU 3
+TILE_QMUSH      EQU 4
+TILE_EMPTY      EQU 5
+TILE_PIPE_TL    EQU 6
+TILE_PIPE_TR    EQU 7
+TILE_PIPE_BL    EQU 8
+TILE_PIPE_BR    EQU 9
+TILE_STAIR      EQU 10
+TILE_COIN       EQU 11
+TILE_FLAG       EQU 12
 
-; ---- colours: numbers from the default VGA palette ----
-; 0 is never used here because 0 means "transparent" in sprites
-COL_SKY         EQU 9           ; light blue
-COL_GROUND      EQU 6           ; brown
-COL_BRICK       EQU 4           ; red
-COL_PIPE        EQU 2           ; green
-COL_HERO        EQU 12          ; light red (Mario)
-COL_ENEMY       EQU 5           ; magenta (enemies)
-COL_TEXT        EQU 15          ; white (letters and digits)
-COL_HUD         EQU 1           ; blue (strip at the top)
+; ---- colours ----
+COL_SKY         EQU 9
+COL_GROUND      EQU 6
+COL_BRICK       EQU 4
+COL_PIPE        EQU 2
+COL_HERO        EQU 12
+COL_ENEMY       EQU 5
+COL_TEXT        EQU 15
+COL_HUD         EQU 1
 
-; ---- keyboard scan codes: the number the keyboard sends for each key ----
-SC_ESC          EQU 01h         ; Esc = go back / exit
-SC_ENTER        EQU 1Ch         ; Enter = choose in menu, continue
-SC_P            EQU 19h         ; P = pause / resume
-SC_LSHIFT       EQU 2Ah         ; Left Shift = run
-SC_SPACE        EQU 39h         ; Space = jump
-SC_UP           EQU 48h         ; Up arrow = move menu up
-SC_DOWN         EQU 50h         ; Down arrow = move menu down
-SC_LEFT         EQU 4Bh         ; Left arrow = walk left
-SC_RIGHT        EQU 4Dh         ; Right arrow = walk right
+; ---- keyboard scan codes ----
+SC_ESC          EQU 01h
+SC_ENTER        EQU 1Ch
+SC_P            EQU 19h
+SC_LSHIFT       EQU 2Ah
+SC_SPACE        EQU 39h
+SC_UP           EQU 48h
+SC_DOWN         EQU 50h
+SC_LEFT         EQU 4Bh
+SC_RIGHT        EQU 4Dh
 
-; ---- physics ----
-; 8.8 fixed point: the high byte is the whole part, the low byte is the
-; fraction. So 0100h = 1.0 and 0080h = 0.5. Speeds are pixels per frame.
-WALK_ACCEL      EQU 0020h       ; each frame a key is held, speed grows by 0.125
-FRICTION        EQU 0010h       ; each frame with no key, speed shrinks by 0.0625
-MAX_WALK        EQU 0180h       ; fastest walking speed = 1.5 pixels/frame
-MAX_RUN         EQU 0280h       ; fastest running speed (Shift) = 2.5 pixels/frame
-GRAVITY         EQU 0040h       ; every frame we add 0.25 to the downward speed
-JUMP_START      EQU 0FA80h      ; speed at the start of a jump = -5.5 (negative = up)
-JUMP_CUTOFF     EQU 0FE00h      ; if Space is let go early, upward speed is cut to -2.0
-MAX_FALL        EQU 0400h       ; falling can't get faster than 4.0 pixels/frame
-STOMP_BOUNCE    EQU 0FD00h      ; bounce after jumping on an enemy = -3.0 (up)
-GOOMBA_SPEED    EQU 0080h       ; Goomba walks 0.5 pixel per frame (slow)
-KOOPA_SPEED     EQU 00C0h       ; Koopa walks 0.75 pixel per frame (a bit faster)
-SHELL_SPEED     EQU 0300h       ; sliding shell moves 3 pixels per frame (fast)
-MUSHROOM_SPEED  EQU 0100h       ; mushroom moves 1 pixel per frame
+; ---- physics (8.8 fixed point) ----
+WALK_ACCEL      EQU 0020h
+FRICTION        EQU 0010h
+MAX_WALK        EQU 0180h
+MAX_RUN         EQU 0280h
+GRAVITY         EQU 0040h
+JUMP_START      EQU 0FA80h
+JUMP_CUTOFF     EQU 0FE00h
+MAX_FALL        EQU 0400h
+STOMP_BOUNCE    EQU 0FD00h
+GOOMBA_SPEED    EQU 0080h
+KOOPA_SPEED     EQU 00C0h
+SHELL_SPEED     EQU 0300h
+MUSHROOM_SPEED  EQU 0100h
 
 ; ---- game limits ----
-START_LIVES     EQU 3           ; you start a new game with 3 lives
-MAX_LIVES       EQU 99          ; lives never go above 99
-LEVEL_TIME      EQU 300         ; the clock starts at 300 seconds
-COINS_FOR_LIFE  EQU 100         ; every 100 coins gives 1 extra life
-MAX_HP          EQU 2           ; health: Small Mario = 1, Super Mario = 2
-MAX_ENEMIES     EQU 8           ; at most 8 enemies are active at once
-MAX_SCORE_HI    EQU 000Fh       ; 999,999 doesn't fit in 16 bits, so we split it:
-MAX_SCORE_LO    EQU 423Fh       ; 999,999 = 000F423Fh -> high word 000Fh, low word 423Fh
+START_LIVES     EQU 3
+MAX_LIVES       EQU 99
+LEVEL_TIME      EQU 300
+COINS_FOR_LIFE  EQU 100
+MAX_HP          EQU 2
+MAX_ENEMIES     EQU 8
+MAX_SCORE_HI    EQU 000Fh
+MAX_SCORE_LO    EQU 423Fh
 
-; ---- points (how much each event adds to the score) ----
-PTS_COIN        EQU 200         ; picking a coin, or a coin from a ? block
-PTS_KICK        EQU 400         ; kicking a shell that is lying still
-PTS_SHELL_KILL  EQU 500         ; a sliding shell knocks out an enemy
-PTS_MUSHROOM    EQU 1000        ; picking up a mushroom
-PTS_BRICK       EQU 50          ; Super Mario breaking a brick
-PTS_PER_SECOND  EQU 50          ; at the end, each second left on the clock gives 50
-STOMP_MAX       EQU 10          ; stomps 1 to 10 give points, the 11th gives a free life
+; ---- points ----
+PTS_COIN        EQU 200
+PTS_KICK        EQU 400
+PTS_SHELL_KILL  EQU 500
+PTS_MUSHROOM    EQU 1000
+PTS_BRICK       EQU 50
+PTS_PER_SECOND  EQU 50
+STOMP_MAX       EQU 10
 
 ; ---- timings ----
-; The manual gives times in seconds. The game works in frames, so we
-; multiply seconds x FRAME_RATE. Change FRAME_RATE and all of these follow.
-FRAME_RATE      EQU 30          ; frames per second (30 only if Module 8 speeds up the timer, else 18)
-TICKS_PER_SEC   EQU FRAME_RATE          ; 1 timer tick = 1 frame
-INVULN_FRAMES   EQU 2*FRAME_RATE        ; blinking safe time after being hurt = 2 s
-FLAT_FRAMES     EQU FRAME_RATE          ; a squashed Goomba stays visible 1 s
-KICK_GRACE      EQU 8                   ; after a kick the shell ignores Mario for 8 frames
-DEATH_FRAMES    EQU FRAME_RATE*3/2      ; death animation = 1.5 s
-LIFELOST_FRAMES EQU 2*FRAME_RATE        ; "life lost" screen = 2 s
-SLIDE_FRAMES    EQU FRAME_RATE          ; sliding down the flag pole = 1 s
-WALK_FRAMES     EQU FRAME_RATE          ; walking to the castle = 1 s
-DEATH_HOP       EQU 48                  ; when Mario dies he jumps up 48 pixels first
+FRAME_RATE      EQU 30
+TICKS_PER_SEC   EQU FRAME_RATE
+INVULN_FRAMES   EQU 2*FRAME_RATE
+FLAT_FRAMES     EQU FRAME_RATE
+KICK_GRACE      EQU 8
+DEATH_FRAMES    EQU FRAME_RATE*3/2
+LIFELOST_FRAMES EQU 2*FRAME_RATE
+SLIDE_FRAMES    EQU FRAME_RATE
+WALK_FRAMES     EQU FRAME_RATE
+DEATH_HOP       EQU 48
 
-; ---- game states: which screen / mode the game is in right now ----
-STATE_TITLE     EQU 0           ; title screen with START / EXIT
-STATE_PLAYING   EQU 1           ; the actual game
-STATE_PAUSED    EQU 2           ; frozen because P was pressed
-STATE_DYING     EQU 3           ; Mario's death animation
-STATE_LIFELOST  EQU 4           ; "life lost" screen
-STATE_WIN       EQU 5           ; slide down the pole and walk to the castle
-STATE_LEVELDONE EQU 6           ; "level complete" screen
-STATE_GAMEOVER  EQU 7           ; "game over" screen
-STATE_EXIT      EQU 8           ; quit and go back to DOS
+; ---- game states ----
+STATE_TITLE     EQU 0
+STATE_PLAYING   EQU 1
+STATE_PAUSED    EQU 2
+STATE_DYING     EQU 3
+STATE_LIFELOST  EQU 4
+STATE_WIN       EQU 5
+STATE_LEVELDONE EQU 6
+STATE_GAMEOVER  EQU 7
+STATE_EXIT      EQU 8
 
 ; ---- enemy types ----
-ENEMY_NONE      EQU 0           ; this slot in the table is empty (no enemy)
-ENEMY_GOOMBA    EQU 1           ; a Goomba
-ENEMY_KOOPA     EQU 2           ; a Koopa Troopa (the turtle)
-ENEMY_SHELL     EQU 3           ; a Koopa shell
+ENEMY_NONE      EQU 0
+ENEMY_GOOMBA    EQU 1
+ENEMY_KOOPA     EQU 2
+ENEMY_SHELL     EQU 3
 
-; ---- enemy states (our own list, kept in the EN_STATE field) ----
-ENS_WAIT        EQU 0           ; standing still, waiting until it is near the screen
-ENS_WALK        EQU 1           ; walking around
-ENS_FLAT        EQU 2           ; squashed Goomba, shown for a moment then removed
-ENS_SHELL_STILL EQU 3           ; shell lying still
-ENS_SHELL_SLIDE EQU 4           ; shell sliding fast
+; ---- enemy states ----
+ENS_WAIT        EQU 0
+ENS_WALK        EQU 1
+ENS_FLAT        EQU 2
+ENS_SHELL_STILL EQU 3
+ENS_SHELL_SLIDE EQU 4
 
 ; ---- enemy record layout ----
-; Every enemy is one record of EN_SIZE bytes. These numbers say where each
-; field sits inside the record (counted from the start of the record).
-EN_TYPE         EQU 0           ; byte 0: which enemy (ENEMY_...)
-EN_STATE        EQU 1           ; byte 1: what it is doing (ENS_...)
-EN_X            EQU 2           ; bytes 2-3: x position in the level (8.8)
-EN_Y            EQU 4           ; bytes 4-5: y position (8.8)
-EN_SPEED        EQU 6           ; bytes 6-7: walking speed (8.8)
-EN_DIR          EQU 8           ; byte 8: which way it walks (left or right)
-EN_TIMER        EQU 9           ; byte 9: countdown timer (flat time, kick grace)
-EN_VY           EQU 10          ; bytes 10-11: falling speed (8.8, signed)
-EN_SIZE         EQU 12          ; one record is 12 bytes in total
+EN_TYPE         EQU 0
+EN_STATE        EQU 1
+EN_X            EQU 2
+EN_Y            EQU 4
+EN_SPEED        EQU 6
+EN_DIR          EQU 8
+EN_TIMER        EQU 9
+EN_VY           EQU 10
+EN_SIZE         EQU 12
 
 ; ============================================================
 ; ===== VARIABLES =====
-; A variable reserves memory. db = 1 byte, dw = 2 bytes, dd = 4 bytes.
-; The number after it is the value it starts with.
 ; ============================================================
 
 ; ---- hero (Mario) ----
-mario_x         dw START_X*256  ; Mario's x in the level, 8.8 (32 x 256 = 2000h)
-mario_y         dw START_Y*256  ; y of Mario's feet, 8.8, unsigned (wraps after 256 px, so the death fall must stop before that)
-mario_vx        dw 0            ; sideways speed, 8.8, can be negative (going left)
-mario_vy        dw 0            ; up/down speed, 8.8, negative = going up
-facing          db 0            ; which way Mario looks: 0 = right, 1 = left
-on_ground       db 0            ; 1 = standing on something, 0 = in the air
-form            db 0            ; 0 = Small Mario, 1 = Super Mario
-hp              db 1            ; health: 1 (Small) or 2 (Super), never more than 2
-invuln_timer    dw 0            ; frames left of being safe after a hit (Mario blinks)
-stomp_chain     db 0            ; enemies stomped in one jump, back to 0 on landing
-pose            db 0            ; which picture to draw: standing, running or jumping
+mario_x         dw START_X
+mario_x_sub     db 0
+mario_y         dw START_Y*256
+mario_vx        dw 0
+mario_vy        dw 0
+facing          db 0
+on_ground       db 0
+form            db 0
+hp              db 1
+invuln_timer    dw 0
+stomp_chain     db 0
+pose            db 0
 
-; ---- camera ----
-camera_x        dw 0            ; level x of the left edge of the screen (whole pixels)
+; ---- camera & fast-redraw state ----
+camera_x        dw 0
+prev_camera_x   dw 0
+need_redraw     db 1
+prev_mario_x    dw START_X
+prev_mario_y    dw START_Y
 
 ; ---- score and status ----
-score_lo        dw 0            ; score, lower 16 bits
-score_hi        dw 0            ; score, upper 16 bits (together they are one 32-bit number)
-coins           db 0            ; coins collected, 0 to 99 (100 gives a life, back to 0)
-lives           db START_LIVES  ; lives Mario has left
+score_lo        dw 0
+score_hi        dw 0
+coins           db 0
+lives           db START_LIVES
 
 ; ---- clock ----
-time_left       dw LEVEL_TIME   ; seconds left on the level clock, counts down
-tick_count      dw 0            ; the timer interrupt adds 1 to this on every tick
-last_tick       dw 0            ; tick_count from the last frame, to see if a new tick came
-sec_ticks       db 0            ; ticks counted so far toward one second
+time_left       dw LEVEL_TIME
+tick_count      dw 0
+last_tick       dw 0
+sec_ticks       db 0
 
 ; ---- keys ----
-key_state       times 128 db 0  ; 128 bytes, one per scan code: 1 = key held, 0 = not held
-key_extended    db 0            ; 1 right after the E0h byte that arrow keys send first
+key_state       times 128 db 0
+key_extended    db 0
 
 ; ---- saved interrupt vectors ----
-old_int09       dd 0            ; original keyboard handler (4 bytes), put back on exit
-old_int08       dd 0            ; original timer handler (4 bytes), put back on exit
+old_int09       dd 0
+old_int08       dd 0
 
 ; ---- game control ----
-game_state      db STATE_TITLE  ; which state the game is in, starts at the title screen
-fb_seg          dw 0            ; segment of the hidden frame buffer we draw into first
-menu_choice     db 0            ; title menu highlight: 0 = START, 1 = EXIT
-win_timer       dw 0            ; frames passed in the win sequence
-death_timer     dw 0            ; frames passed in the death animation
+game_state      db STATE_TITLE
+fb_seg          dw 0
+menu_choice     db 0
+win_timer       dw 0
+death_timer     dw 0
 
 ; ---- enemies ----
-enemies         times MAX_ENEMIES*EN_SIZE db 0  ; table of 8 records x 12 bytes, all zero = empty
+enemies         times MAX_ENEMIES*EN_SIZE db 0
 
 ; ---- score tables ----
-stomp_points    dw 100, 200, 400, 500, 800, 1000, 2000, 4000, 5000, 8000  ; points for stomp 1..10 in one jump
-flag_points     dw 5000, 2000, 800, 400, 100  ; flag pole points: top zone first, bottom zone last
-; Row of Mario's feet (0 to 11) -> which flag_points entry to use:
-flag_zone       db 0,0,0,0,1,2,3,3,4,4,4,4    ; rows 2-3 = 5000, 4 = 2000, 5 = 800, 6-7 = 400, 8 = 100
+stomp_points    dw 100, 200, 400, 500, 800, 1000, 2000, 4000, 5000, 8000
+flag_points     dw 5000, 2000, 800, 400, 100
+flag_zone       db 0,0,0,0,1,2,3,3,4,4,4,4
 
-; map_original and map_working (720 bytes each) will be added in Module 3
+; Include all modules right before the code section:
+%include "video.asm"            ; Modules 1, 2, 3
+%include "sprites.asm"          ; Module 4
+%include "level.asm"            ; Module 5
+%include "camera.asm"           ; Module 6
+%include "input.asm"            ; Modules 7, 8
+%include "physics.asm"          ; Module 9
+%include "collide.asm"        ; Module 10
+%include "enemies.asm"          ; Module 11
+%include "items.asm"            ; Module 12
+%include "ui.asm"               ; Module 13
+%include "states.asm"           ; Modules 14, 15
+%include "sound.asm"
+%include "polish.asm"
 
-; Include modules right before the code section:                     
-%include "video.asm"  
 
 ; ============================================================
 ; ===== CODE =====
 ; ============================================================
 
 start:
-    call SetVideoMode           ; switch to 320x200 graphics mode
+    mov ax, cs
+    add ax, 1000h
+    mov [fb_seg], ax
 
-    ; 1. Fill whole screen with COL_SKY (light blue)
-    push 0                      ; x = 0
-    push 0                      ; y = 0
-    push SCREEN_W               ; width = 320
-    push SCREEN_H               ; height = 200
-    push COL_SKY                ; colour = 9
-    call FillRect
+    call SetVideoMode
+    call InstallHandlers
+    call InitUI
+    call ResetMap
+    call InitMario
+    call InitEnemies
 
-    ; 2. Draw top HUD strip using COL_HUD (blue)
-    push 0                      ; x = 0
-    push 0                      ; y = 0
-    push SCREEN_W               ; width = 320
-    push HUD_HEIGHT             ; height = 16
-    push COL_HUD                ; colour = 1
-    call FillRect
+    mov byte [game_state], STATE_TITLE
+    mov byte [hud_dirty], 1
+    call UpdateTimerAndHUD
+    call RenderLevel
+    call DrawEnemies
+    call DrawMario
+    call DrawStateBanner
+    call FlipFullBuffer
 
-    ; 3. Draw ground across the bottom using COL_GROUND (brown)
-    push 0                      ; x = 0
-    push 160                    ; y = 160 (row 10)
-    push SCREEN_W               ; width = 320
-    push 32                     ; height = 32 (rows 10 and 11)
-    push COL_GROUND             ; colour = 6
-    call FillRect
+.game_loop:
+    call WaitNextFrame
+    call UpdateSound
+    call CheckPause
+    cmp byte [game_state], STATE_PAUSED
+    je near .game_loop 
 
-    ; 4. Draw test blocks showing all your other game colours
-    push 30                     ; Brick (COL_BRICK = 4)
-    push 110
-    push TILE_SIZE
-    push TILE_SIZE
-    push COL_BRICK
-    call FillRect
+    mov al, SC_ESC
+    call IsKeyDown
+    jnz near .exit_game
 
-    push 60                     ; Pipe (COL_PIPE = 2)
-    push 128
-    push 32
-    push 32
-    push COL_PIPE
-    call FillRect
+    ; Non-playing state (Title, Win, Game Over): handled in states.asm
+    cmp byte [game_state], STATE_PLAYING
+    je .active_frame
+    call HandleNonPlayingState
+    jmp .game_loop
 
-    push 110                    ; Hero (COL_HERO = 12)
-    push 144
-    push TILE_SIZE
-    push TILE_SIZE
-    push COL_HERO
-    call FillRect
+.active_frame:
+    mov ax, [mario_x]
+    mov [prev_mario_x], ax
+    mov ax, [mario_y]
+    shr ax, 8
+    mov [prev_mario_y], ax
+    mov ax, [camera_x]
+    mov [prev_camera_x], ax
 
-    push 150                    ; Enemy (COL_ENEMY = 5)
-    push 144
-    push TILE_SIZE
-    push TILE_SIZE
-    push COL_ENEMY
-    call FillRect
+    call UpdateMarioPhysics
+    call UpdateEnemies
+    call CheckMarioEnemyCollisions
+    call CheckFlagpoleWin
+    call UpdateTimerAndHUD
 
-    push 190                    ; Text/White (COL_TEXT = 15)
-    push 50
-    push 32
-    push TILE_SIZE
-    push COL_TEXT
-    call FillRect
+    ; Mark HUD dirty if banner just triggered (Win or Game Over)
+    cmp byte [game_state], STATE_PLAYING
+    je .erase_sprites
+    mov byte [hud_dirty], 1
 
-    ; 5. Wait for any key press so you can see the test screen
-    mov ah, 00h                 ; BIOS keyboard function: wait for a key
-    int 16h                     ; call BIOS
+.erase_sprites:
+    call EraseMarioTrail
+    call EraseEnemies
 
-    ; 6. Switch back to text mode and exit to DOS cleanly
+    cmp byte [need_redraw], 1
+    jne .check_scroll
+    mov byte [need_redraw], 0
+    call RenderLevel
+    jmp .draw_all
+
+.check_scroll:
+    mov cx, [camera_x]
+    sub cx, [prev_camera_x]
+    jle .draw_all
+    call ScrollScreenLeft
+
+.draw_all:
+    call DrawEnemies
+    call DrawMario
+
+    mov dx, 03DAh
+.vretrace_end:
+    in al, dx
+    test al, 8
+    jnz .vretrace_end
+.vretrace_start:
+    in al, dx
+    test al, 8
+    jz .vretrace_start
+
+    ; Copy HUD only when hud_dirty = 1; otherwise use fast FlipBackBuffer
+    cmp byte [hud_dirty], 1
+    jne .fast_flip
+    mov byte [hud_dirty], 0
+    call FlipFullBuffer
+    jmp .game_loop
+
+.fast_flip:
+    call FlipBackBuffer
+    jmp .game_loop
+
+.exit_game:
+    call RestoreHandlers
+    call StopSound
     call SetTextMode
-    mov ax, 4C00h               ; DOS function 4Ch = end program
-    int 21h                     ; return to D:\> prompt
+    mov ax, 4C00h
+    int 21h
