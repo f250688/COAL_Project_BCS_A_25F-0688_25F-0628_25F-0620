@@ -1,139 +1,225 @@
-; FILE: video.asm | Module 2: Video Mode & Drawing
+; ============================================================
+; FILE: src/video.asm
+; VGA Mode 13h Setup & Double-Buffered Drawing
+; ============================================================
 
 ; ------------------------------------------------------------
-; Name     : SetVideoMode
-; Purpose  : switches the screen to VGA graphics mode 13h
-;            (320 pixels wide x 200 pixels tall, 256 colours)
-; Inputs   : none
-; Outputs  : screen changes to graphics mode
-; Changes  : none (AX is saved and restored)
+; SetVideoMode: switches screen to 320x200 256-color Mode 13h
 ; ------------------------------------------------------------
 SetVideoMode:
-    push ax                     ; save old AX on the stack
-    mov ax, 0013h               ; BIOS function 00h, mode 13h = 320x200 graphics
-    int 10h                     ; call BIOS to switch the screen mode
-    pop ax                      ; put old AX back
-    ret                         ; go back to caller
+    push ax
+    mov ax, 0013h
+    int 10h
+    pop ax
+    ret
 
 ; ------------------------------------------------------------
-; Name     : SetTextMode
-; Purpose  : switches the screen back to normal DOS text mode
-;            before quitting the program
-; Inputs   : none
-; Outputs  : screen returns to 80x25 text mode
-; Changes  : none (AX is saved and restored)
+; SetTextMode: restores standard 80x25 text mode (03h) on exit
 ; ------------------------------------------------------------
 SetTextMode:
-    push ax                     ; save old AX on the stack
-    mov ax, 0003h               ; BIOS function 00h, mode 03h = normal text screen
-    int 10h                     ; call BIOS to switch back to text
-    pop ax                      ; put old AX back
-    ret                         ; go back to caller
+    push ax
+    mov ax, 0003h
+    int 10h
+    pop ax
+    ret
 
 ; ------------------------------------------------------------
-; Name     : PutPixel
-; Purpose  : draws one coloured dot at (x, y) on the screen
-; Inputs   : pushed on the stack before calling:
-;              [bp+8] = x position (0 to 319)
-;              [bp+6] = y position (0 to 199)
-;              [bp+4] = colour number (0 to 255)
-; Outputs  : writes 1 byte into video memory at 0A000h
-; Changes  : none (all used registers are saved and restored)
+; PutPixel: draws a single pixel into [fb_seg]
+; Stack args: [bp+8]=x, [bp+6]=y, [bp+4]=color, ret 6
 ; ------------------------------------------------------------
 PutPixel:
-    push bp                     ; save caller's base pointer
-    mov bp, sp                  ; point BP to stack so we can read our inputs
-    push ax                     ; save AX
-    push bx                     ; save BX
-    push di                     ; save DI (will hold the memory offset)
-    push es                     ; save ES (will point to video memory)
+    push bp
+    mov bp, sp
+    push ax
+    push bx
+    push dx
+    push di
+    push es
 
-    ; step 1: check that x is on the screen (0 to 319)
-    mov bx, [bp+8]              ; load x from stack into BX
-    cmp bx, SCREEN_W            ; compare x with 320
-    jae .skip                   ; if x >= 320 (or negative), skip so we don't write off-screen
+    mov bx, [bp + 8]            ; x
+    mov dx, [bp + 6]            ; y
+    mov al, [bp + 4]            ; color
 
-    ; step 2: check that y is on the screen (0 to 199)
-    mov ax, [bp+6]              ; load y from stack into AX
-    cmp ax, SCREEN_H            ; compare y with 200
-    jae .skip                   ; if y >= 200 (or negative), skip
+    cmp bx, 0
+    jl .pp_done
+    cmp bx, SCREEN_W
+    jge .pp_done
+    cmp dx, 0
+    jl .pp_done
+    cmp dx, SCREEN_H
+    jge .pp_done
 
-    ; step 3: find memory offset DI = (y * 320) + x using shifts
-    ; 320 = 256 + 64, so (y * 320) = (y shifted left 8) + (y shifted left 6)
-    mov di, ax                  ; copy y into DI
-    shl ax, 8                   ; AX = y * 256
-    shl di, 6                   ; DI = y * 64
-    add di, ax                  ; DI = (y * 256) + (y * 64) = y * 320
-    add di, bx                  ; DI = (y * 320) + x (exact byte location on screen)
+    ; offset = y * 320 + x = (y * 256) + (y * 64) + x
+    mov di, dx
+    shl di, 8
+    shl dx, 6
+    add di, dx
+    add di, bx
 
-    ; step 4: put the colour byte into video memory
-    mov ax, VIDEO_SEG           ; load 0A000h into AX
-    mov es, ax                  ; point ES to the screen segment
-    mov al, [bp+4]              ; load the colour byte from stack into AL
-    mov [es:di], al             ; draw the pixel onto the screen
+    mov es, [fb_seg]
+    mov [es:di], al
 
-.skip:
-    pop es                      ; restore ES
-    pop di                      ; restore DI
-    pop bx                      ; restore BX
-    pop ax                      ; restore AX
-    pop bp                      ; restore BP
-    ret 6                       ; return and clean up 3 word inputs (3 x 2 = 6 bytes)
+.pp_done:
+    pop es
+    pop di
+    pop dx
+    pop bx
+    pop ax
+    pop bp
+    ret 6
 
 ; ------------------------------------------------------------
-; Name     : FillRect
-; Purpose  : draws a solid filled box of size w x h at (x, y)
-; Inputs   : pushed on the stack before calling:
-;              [bp+12] = left x position
-;              [bp+10] = top y position
-;              [bp+8]  = width w in pixels
-;              [bp+6]  = height h in pixels
-;              [bp+4]  = colour number (0 to 255)
-; Outputs  : draws w * h pixels on the screen
-; Changes  : none (all used registers are saved and restored)
+; FillRect: draws a filled rectangle into [fb_seg]
+; Stack args:
+;   [bp+12] = x
+;   [bp+10] = y
+;   [bp+8]  = width
+;   [bp+6]  = height
+;   [bp+4]  = color
+;   ret 10
 ; ------------------------------------------------------------
 FillRect:
-    push bp                     ; save caller's base pointer
-    mov bp, sp                  ; point BP to stack to read inputs
-    push ax                     ; save AX
-    push bx                     ; save BX (tracks current x)
-    push cx                     ; save CX (loop counter)
-    push dx                     ; save DX (tracks current y)
+    push bp
+    mov bp, sp
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push es
 
-    mov cx, [bp+6]              ; load height h into CX
-    cmp cx, 0                   ; check if height is 0 or less
-    jle .done                   ; if nothing to draw, jump to end
+    mov bx, [bp + 12]           ; x
+    mov dx, [bp + 10]           ; y
+    mov si, [bp + 8]            ; width
+    mov cx, [bp + 6]            ; height
+    mov al, [bp + 4]            ; color
 
-    mov dx, [bp+10]             ; load starting top y into DX
+    ; Clip top/bottom
+    cmp dx, SCREEN_H
+    jge near .fr_done
+    cmp dx, 0
+    jge .fr_chk_bot
+    add cx, dx
+    xor dx, dx
+.fr_chk_bot:
+    cmp cx, 0
+    jle near .fr_done
+    mov di, dx
+    add di, cx
+    cmp di, SCREEN_H
+    jle .fr_clip_x
+    mov cx, SCREEN_H
+    sub cx, dx
 
-.row_loop:
-    push cx                     ; save outer row counter on stack
+.fr_clip_x:
+    ; Clip left/right
+    cmp bx, SCREEN_W
+    jge near .fr_done
+    cmp bx, 0
+    jge .fr_chk_right
+    add si, bx
+    xor bx, bx
+.fr_chk_right:
+    cmp si, 0
+    jle near .fr_done
+    mov di, bx
+    add di, si
+    cmp di, SCREEN_W
+    jle .fr_draw
+    mov si, SCREEN_W
+    sub si, bx
 
-    mov cx, [bp+8]              ; load width w into CX
-    cmp cx, 0                   ; check if width is 0 or less
-    jle .next_row               ; if 0 wide, skip this row
+.fr_draw:
+    ; Compute starting offset = y * 320 + x
+    mov di, dx
+    shl di, 8
+    shl dx, 6
+    add di, dx
+    add di, bx
 
-    mov bx, [bp+12]             ; reset BX back to left x for this new row
+    mov es, [fb_seg]
+    cld
 
-.col_loop:
-    push bx                     ; input 1: current x
-    push dx                     ; input 2: current y
-    mov ax, [bp+4]              ; get colour from stack
-    push ax                     ; input 3: colour
-    call PutPixel               ; draw this single pixel
+.fr_row:
+    push cx
+    push di
+    mov cx, si
+    rep stosb
+    pop di
+    pop cx
+    add di, SCREEN_W
+    loop .fr_row
 
-    inc bx                      ; move 1 pixel right (x = x + 1)
-    loop .col_loop              ; subtract 1 from CX and repeat until row is done
+.fr_done:
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    pop bp
+    ret 10
 
-.next_row:
-    inc dx                      ; move 1 row down (y = y + 1)
-    pop cx                      ; get outer row counter back
-    loop .row_loop              ; subtract 1 from CX and repeat until all rows are done
+; ------------------------------------------------------------
+; FlipBackBuffer: copies game area (rows 16..191) from [fb_seg]
+;                 to VGA screen (0A000h) in one burst
+; ------------------------------------------------------------
+FlipBackBuffer:
+    push ax
+    push cx
+    push si
+    push di
+    push ds
+    push es
 
-.done:
-    pop dx                      ; restore DX
-    pop cx                      ; restore CX
-    pop bx                      ; restore BX
-    pop ax                      ; restore AX
-    pop bp                      ; restore BP
-    ret 10                      ; return and clean up 5 word inputs (5 x 2 = 10 bytes)
+    mov ax, VIDEO_SEG
+    mov es, ax
+    mov ax, [fb_seg]
+    mov ds, ax
+
+    mov si, HUD_HEIGHT * SCREEN_W       ; row 16 (offset 5120)
+    mov di, si
+    mov cx, (VISIBLE_H - HUD_HEIGHT) * SCREEN_W / 2 ; 176 * 160 words
+    cld
+    rep movsw
+
+    pop es
+    pop ds
+    pop di
+    pop si
+    pop cx
+    pop ax
+    ret
+
+; ------------------------------------------------------------
+; FlipFullBuffer: copies entire 320x200 screen (including HUD)
+;                 from [fb_seg] to VGA screen (0A000h)
+; ------------------------------------------------------------
+FlipFullBuffer:
+    push ax
+    push cx
+    push si
+    push di
+    push ds
+    push es
+
+    mov ax, VIDEO_SEG
+    mov es, ax
+    mov ax, [fb_seg]
+    mov ds, ax
+
+    xor si, si
+    xor di, di
+    mov cx, SCREEN_W * SCREEN_H / 2     ; 32,000 words (64,000 bytes)
+    cld
+    rep movsw
+
+    pop es
+    pop ds
+    pop di
+    pop si
+    pop cx
+    pop ax
+    ret
